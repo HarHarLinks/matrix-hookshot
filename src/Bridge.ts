@@ -37,7 +37,7 @@ import { SetupConnection } from "./Connections/SetupConnection";
 const log = new LogWrapper("Bridge");
 
 export function getAppservice(config: BridgeConfig, registration: IAppserviceRegistration, storage: IAppserviceStorageProvider) {
-    return new Appservice({
+    const as = new Appservice({
         homeserverName: config.bridge.domain,
         homeserverUrl: config.bridge.url,
         port: config.bridge.port,
@@ -56,6 +56,13 @@ export function getAppservice(config: BridgeConfig, registration: IAppserviceReg
         },
         storage: storage,
     });
+    as.isNamespacedUser = (userId) => !!(registration.namespaces.users.find((r) => {
+        if (userId === `@${registration.sender_localpart}:${config.bridge.domain}`) {
+            return true;
+        }
+        return new RegExp(r.regex).test(userId);
+    })); 
+    return as;
 }
 
 export class Bridge {
@@ -389,7 +396,7 @@ export class Bridge {
         );
 
         this.queue.on<GitHubWebhookTypes.DiscussionCreatedEvent>("github.discussion.created", async ({data}) => {
-            if (!this.github) {
+            if (!this.github || !this.config.github) {
                 return;
             }
             const spaces = connManager.getConnectionsForGithubRepoDiscussion(data.repository.owner.login, data.repository.name);
@@ -411,6 +418,7 @@ export class Bridge {
                         this.tokenStore,
                         this.commentProcessor,
                         this.messageClient,
+                        this.config.github,
                     );
                     connManager.push(discussionConnection);
                 } catch (ex) {
@@ -600,11 +608,11 @@ export class Bridge {
     }
 
     private async onRoomInvite(roomId: string, event: MatrixEvent<MatrixMemberContent>) {
+        log.info(`Got invite roomId=${roomId} from=${event.sender} to=${event.state_key}`);
         if (this.as.isNamespacedUser(event.sender)) {
             /* Do not handle invites from our users */
             return;
         }
-        log.info(`Got invite roomId=${roomId} from=${event.sender} to=${event.state_key}`);
         // Room joins can fail over federation
         if (event.state_key !== this.as.botUserId) {
             return this.as.botIntent.underlyingClient.kickUser(this.as.botUserId, roomId, "Bridge does not support DMing ghosts");
@@ -923,6 +931,9 @@ export class Bridge {
             }
         });
         adminRoom.on("open.gitlab-issue", async (issueInfo: GetIssueOpts, res: GetIssueResponse, instanceName: string, instance: GitLabInstance) => {
+            if (!this.config.gitlab) {
+                throw Error('GitLab is not configured on this bridge');
+            }
             const [ connection ] = this.connectionManager?.getConnectionsForGitLabIssue(instance, issueInfo.projects, issueInfo.issue) || [];
             if (connection) {
                 return this.as.botClient.inviteUser(adminRoom.userId, connection.roomId);
@@ -935,7 +946,8 @@ export class Bridge {
                 this.as,
                 this.tokenStore, 
                 this.commentProcessor,
-                this.messageClient
+                this.messageClient,
+                this.config.gitlab,
             );
             this.connectionManager?.push(newConnection);
             return this.as.botClient.inviteUser(adminRoom.userId, newConnection.roomId);

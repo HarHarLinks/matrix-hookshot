@@ -1,11 +1,20 @@
 import LogWrapper from "./LogWrapper";
 import { Appservice } from "matrix-bot-sdk";
 import axios from "axios";
+import { IGitlabUser } from "./Gitlab/WebhookTypes";
 
 const log = new LogWrapper("IntentUtils");
 
-export async function getIntentForUser(user: {avatarUrl?: string, login: string}, as: Appservice) {
-    const intent = as.getIntentForSuffix(user.login);
+
+export async function getIntentForGitLabUser(user: IGitlabUser, as: Appservice, prefix: string) {
+    return getIntentForGitHubUser({avatarUrl: user.avatar_url, login: user.username}, as, prefix);
+}
+
+export async function getIntentForGitHubUser(user: {avatarUrl?: string, login: string}, as: Appservice, prefix: string) {
+    if (!user.login) {
+        throw Error('User must have a login');
+    }
+    const intent = as.getIntentForUserId(`@${prefix}${user.login.toLowerCase()}:${as.botUserId.split(':')[1]}`);
     const displayName = `${user.login}`;
     // Verify up-to-date profile
     let profile;

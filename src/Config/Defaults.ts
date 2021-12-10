@@ -49,7 +49,8 @@ export const DefaultConfig = new BridgeConfig({
         },
         defaultOptions: {
             showIssueRoomLink: false,
-        }
+        },
+        userIdPrefix: "_github_",
     },
     gitlab: {
         instances: {

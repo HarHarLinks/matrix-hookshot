@@ -6,13 +6,14 @@ import { UserTokenStore } from "../UserTokenStore";
 import LogWrapper from "../LogWrapper";
 import { CommentProcessor } from "../CommentProcessor";
 import { MessageSenderClient } from "../MatrixSender";
-import { getIntentForUser } from "../IntentUtils";
+import { getIntentForGitHubUser } from "../IntentUtils";
 import { FormatUtil } from "../FormatUtil";
 import axios from "axios";
 import { GithubInstance } from "../Github/GithubInstance";
 import { IssuesGetCommentResponseData, IssuesGetResponseData, ReposGetResponseData} from "../Github/Types";
 import { IssuesEditedEvent, IssueCommentCreatedEvent } from "@octokit/webhooks-types";
 import { BaseConnection } from "./BaseConnection";
+import { BridgeConfigGitHub } from "../Config/Config";
 
 export interface GitHubIssueConnectionState {
     org: string;
@@ -139,7 +140,8 @@ export class GitHubIssueConnection extends BaseConnection implements IConnection
         private tokenStore: UserTokenStore,
         private commentProcessor: CommentProcessor,
         private messageClient: MessageSenderClient,
-        private github: GithubInstance) {
+        private github: GithubInstance,
+        private config: BridgeConfigGitHub) {
             super(roomId, stateKey, GitHubIssueConnection.CanonicalEventType);
         }
 
@@ -163,6 +165,7 @@ export class GitHubIssueConnection extends BaseConnection implements IConnection
         return this.onCommentCreated({
             // TODO: Fix types,
             comment: event.comment as any,
+            repository: event.repository as any,
             action: event.action,
         })
     }
@@ -172,22 +175,22 @@ export class GitHubIssueConnection extends BaseConnection implements IConnection
         action: string,
         repository?: ReposGetResponseData,
         issue?: IssuesGetResponseData,
-    }, updateState = true) {
+    }, updateState = true, echoDelay = true) {
         const comment = event.comment;
         if (!comment || !comment.user) {
             throw Error('Comment undefined');
         }
-        if (event.repository) {
+        if (echoDelay) {
             // Delay to stop comments racing sends
-            await new Promise((resolve) => setTimeout(resolve, 500));
+            await new Promise((resolve) => setTimeout(resolve, 3000));
             if (this.commentProcessor.hasCommentBeenProcessed(this.state.org, this.state.repo, this.state.issues[0], comment.id)) {
                 return;
             }
         }
-        const commentIntent = await getIntentForUser({
+        const commentIntent = await getIntentForGitHubUser({
             login: comment.user.login,
             avatarUrl: comment.user.avatar_url,
-        }, this.as);
+        }, this.as, this.config.userIdPrefix);
         const matrixEvent = await this.commentProcessor.getEventBodyForGitHubComment(comment, event.repository, event.issue);
         // Comment body may be blank
         if (matrixEvent) {
@@ -215,11 +218,11 @@ export class GitHubIssueConnection extends BaseConnection implements IConnection
 
         if (this.state.comments_processed === -1) {
             // This has a side effect of creating a profile for the user.
-            const creator = await getIntentForUser({
+            const creator = await getIntentForGitHubUser({
                 // TODO: Fix
                 login: issue.data.user?.login as string,
                 avatarUrl: issue.data.user?.avatar_url || undefined
-            }, this.as);
+            }, this.as, this.config.userIdPrefix);
             // We've not sent any messages into the room yet, let's do it!
             if (issue.data.body) {
                 await this.messageClient.sendMatrixMessage(this.roomId, {
@@ -250,7 +253,7 @@ export class GitHubIssueConnection extends BaseConnection implements IConnection
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     comment: comment as any,
                     action: "fake",
-                }, false);
+                }, false, false);
                 this.state.comments_processed++;
             }
         }
@@ -284,6 +287,7 @@ export class GitHubIssueConnection extends BaseConnection implements IConnection
 
     public async onMatrixIssueComment(event: MatrixEvent<MatrixMessageContent>, allowEcho = false) {
         const clientKit = await this.tokenStore.getOctokitForUser(event.sender);
+        log.info(`Got event ${event.event_id} from ${event.sender} (has client: ${!!clientKit})`);
         if (clientKit === null) {
             await this.as.botClient.sendEvent(this.roomId, "m.reaction", {
                 "m.relates_to": {
@@ -302,6 +306,7 @@ export class GitHubIssueConnection extends BaseConnection implements IConnection
             body: await this.commentProcessor.getCommentBodyForEvent(event, false),
             issue_number: parseInt(this.state.issues[0], 10),
         });
+        log.info(`Message ${event.event_id} bridged as comment ${result.data.html_url}`);
 
         if (!allowEcho) {
             this.commentProcessor.markCommentAsProcessed(this.state.org, this.state.repo, this.state.issues[0], result.data.id);

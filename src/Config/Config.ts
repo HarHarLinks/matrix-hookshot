@@ -23,6 +23,7 @@ interface BridgeConfigGitHubYAML {
     defaultOptions?: {
         showIssueRoomLink: false;
     }
+    userIdPrefix?: string;
 }
 
 export class BridgeConfigGitHub {
@@ -48,12 +49,15 @@ export class BridgeConfigGitHub {
     defaultOptions?: {
         showIssueRoomLink: false;
     };
+    @configKey("The userId prefix for ghost users. Defaults to _github_. Ensure this matches your registration file", true)
+    userIdPrefix: string;
 
     constructor(yaml: BridgeConfigGitHubYAML) {
         this.auth = yaml.auth;
         this.webhook = yaml.webhook;
         this.oauth = yaml.oauth;
         this.defaultOptions = yaml.defaultOptions;
+        this.userIdPrefix = yaml.userIdPrefix || "_github_";
     }
 }
 
@@ -66,11 +70,12 @@ export interface GitLabInstance {
     // };
 }
 
-interface BridgeConfigGitLab {
+export interface BridgeConfigGitLab {
     webhook: {
         secret: string;
     },
     instances: {[name: string]: GitLabInstance};
+    userIdPrefix?: string;
 }
 
 export interface BridgeConfigJira {

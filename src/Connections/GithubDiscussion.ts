@@ -3,7 +3,7 @@ import { Appservice } from "matrix-bot-sdk";
 import { UserTokenStore } from "../UserTokenStore";
 import { CommentProcessor } from "../CommentProcessor";
 import { MessageSenderClient } from "../MatrixSender";
-import { getIntentForUser } from "../IntentUtils";
+import { getIntentForGitHubUser } from "../IntentUtils";
 import { MatrixEvent, MatrixMessageContent } from "../MatrixEvent";
 import { Discussion } from "@octokit/webhooks-types";
 import emoji from "node-emoji";
@@ -12,6 +12,8 @@ import { DiscussionCommentCreatedEvent } from "@octokit/webhooks-types";
 import { GithubGraphQLClient } from "../Github/GithubInstance";
 import LogWrapper from "../LogWrapper";
 import { BaseConnection } from "./BaseConnection";
+import { BridgeConfigGitHub } from "../Config/Config";
+import { config } from "winston";
 export interface GitHubDiscussionConnectionState {
     owner: string;
     repo: string;
@@ -43,11 +45,12 @@ export class GitHubDiscussionConnection extends BaseConnection implements IConne
     public static async createDiscussionRoom(
         as: Appservice, userId: string|null, owner: string, repo: string, discussion: Discussion,
         tokenStore: UserTokenStore, commentProcessor: CommentProcessor, messageClient: MessageSenderClient,
+        githubConfig: BridgeConfigGitHub,
     ) {
-        const commentIntent = await getIntentForUser({
+        const commentIntent = await getIntentForGitHubUser({
             login: discussion.user.login,
             avatarUrl: discussion.user.avatar_url,
-        }, as);
+        }, as, githubConfig.userIdPrefix);
         const state: GitHubDiscussionConnectionState = {
             owner,
             repo,
@@ -79,7 +82,7 @@ export class GitHubDiscussionConnection extends BaseConnection implements IConne
             format: 'org.matrix.custom.html',
         });
         await as.botIntent.ensureJoined(roomId);
-        return new GitHubDiscussionConnection(roomId, as, state, '', tokenStore, commentProcessor, messageClient);
+        return new GitHubDiscussionConnection(roomId, as, state, '', tokenStore, commentProcessor, messageClient, githubConfig);
     }
 
     constructor(roomId: string,
@@ -88,7 +91,8 @@ export class GitHubDiscussionConnection extends BaseConnection implements IConne
         stateKey: string,
         private tokenStore: UserTokenStore,
         private commentProcessor: CommentProcessor,
-        private messageClient: MessageSenderClient) {
+        private messageClient: MessageSenderClient,
+        private config: BridgeConfigGitHub) {
             super(roomId, stateKey, GitHubDiscussionConnection.CanonicalEventType);
         }
 
@@ -130,7 +134,7 @@ export class GitHubDiscussionConnection extends BaseConnection implements IConne
         if (this.sentEvents.has(data.comment.node_id)) {
             return;
         }
-        const intent = await getIntentForUser(data.comment.user, this.as);
+        const intent = await getIntentForGitHubUser(data.comment.user, this.as, this.config.userIdPrefix);
         await this.messageClient.sendMatrixMessage(this.roomId, {
             body: data.comment.body,
             formatted_body: md.render(data.comment.body),
