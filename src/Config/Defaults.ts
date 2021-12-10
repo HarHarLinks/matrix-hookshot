@@ -60,7 +60,8 @@ export const DefaultConfig = new BridgeConfig({
         },
         webhook: {
             secret: "secrettoken",
-        }
+        },
+        userIdPrefix: "_gitlab_",
     },
     jira: {
         webhook: {
