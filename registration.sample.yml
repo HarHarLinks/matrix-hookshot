@@ -10,7 +10,8 @@ namespaces:
       exclusive: true
     - regex: "@_jira_.*:foobar"
       exclusive: true
-    - regex: "@_webhooks_.*:foobar" # Where _webhooks_ is set by userIdPrefix in config.yml
+    - regex: "@_webhooks_.*:foobar" # Where _webhooks_ mirrors the setting userIdPrefix in config.yml
+      # whatever you choose, make sure it does not overlap with another appservice, e.g. appservice-webhooks
       exclusive: true
   aliases:
     - regex: "#github_.+:foobar" # Where foobar is your homeserver's domain
